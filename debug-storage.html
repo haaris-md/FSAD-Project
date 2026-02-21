@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Campus Connect Storage</title>
+    <style>
+        body {
+            font-family: monospace;
+            max-width: 900px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+        .section {
+            background: #252526;
+            padding: 20px;
+            margin: 15px 0;
+            border-radius: 6px;
+            border: 1px solid #3e3e42;
+        }
+        h2 {
+            color: #4EC9B0;
+            margin-top: 0;
+        }
+        pre {
+            background: #1e1e1e;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            border: 1px solid #3e3e42;
+        }
+        button {
+            background: #0E639C;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #1177BB;
+        }
+        .error {
+            color: #f48771;
+        }
+        .success {
+            color: #4EC9B0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 Campus Connect Storage Debug</h1>
+    
+    <div class="section">
+        <h2>Events Data (cc_events_v2)</h2>
+        <div id="events"></div>
+    </div>
+    
+    <div class="section">
+        <h2>Clubs Data (cc_clubs)</h2>
+        <div id="clubs"></div>
+    </div>
+    
+    <div class="section">
+        <h2>Session Data (cc_session)</h2>
+        <div id="session"></div>
+    </div>
+    
+    <div class="section">
+        <h2>Users Data (cc_users)</h2>
+        <div id="users"></div>
+    </div>
+    
+    <div class="section">
+        <h2>Actions</h2>
+        <button onclick="clearEvents()">Clear Events</button>
+        <button onclick="clearAll()">Clear All Storage</button>
+        <button onclick="location.reload()">Refresh Debug</button>
+        <div id="message" style="margin-top: 15px;"></div>
+    </div>
+
+    <script>
+        function showData(key, elementId) {
+            const el = document.getElementById(elementId);
+            const data = localStorage.getItem(key);
+            
+            if (!data) {
+                el.innerHTML = '<p class="error">❌ No data found</p>';
+                return;
+            }
+            
+            try {
+                const parsed = JSON.parse(data);
+                const count = Array.isArray(parsed) ? parsed.length : Object.keys(parsed).length;
+                el.innerHTML = `
+                    <p class="success">✓ Found ${count} items</p>
+                    <pre>${JSON.stringify(parsed, null, 2)}</pre>
+                `;
+            } catch (e) {
+                el.innerHTML = `<p class="error">❌ Parse error: ${e.message}</p>`;
+            }
+        }
+        
+        function clearEvents() {
+            localStorage.removeItem('cc_events_v2');
+            document.getElementById('message').innerHTML = '<p class="success">✓ Events cleared. Refresh your app!</p>';
+            setTimeout(() => location.reload(), 1000);
+        }
+        
+        function clearAll() {
+            localStorage.clear();
+            document.getElementById('message').innerHTML = '<p class="success">✓ All data cleared. Refresh your app!</p>';
+            setTimeout(() => location.reload(), 1000);
+        }
+        
+        // Load all data on page load
+        showData('cc_events_v2', 'events');
+        showData('cc_clubs', 'clubs');
+        showData('cc_session', 'session');
+        showData('cc_users', 'users');
+    </script>
+</body>
+</html>
