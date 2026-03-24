@@ -1,0 +1,570 @@
+import { useEffect, useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
+import { Calendar, MapPin, Users, Plus, Edit, Trash2, ChevronLeft, ChevronRight, Image as ImageIcon } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import * as store from "@/lib/eventsStore";
+import { useUser } from "@/context/UserContext";
+import QRCode from "qrcode";
+import jsPDF from "jspdf";
+
+const PAGE_SIZE = 6;
+
+export default function EnhancedEventsSection({ userId, userRole }: { userId: string; userRole?: string }) {
+  const { toast } = useToast();
+  const user = useUser();
+
+  // Data
+  const [items, setItems] = useState<store.EventItem[]>([]);
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState<string | null>(null);
+  const [onlyUpcoming, setOnlyUpcoming] = useState(true);
+  const [page, setPage] = useState(1);
+  const [filterDept, setFilterDept] = useState<string | null>(null);
+  const [filterClub, setFilterClub] = useState<string | null>(null);
+
+  // Creator dialog
+  const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    title: "",
+    description: "",
+    category: "",
+    location: "",
+    event_date: "",
+    max_attendees: "",
+    poster_data_url: "",
+    department: "",
+    club: "",
+  });
+
+  const canCreate = userRole === "faculty" || userRole === "admin";
+  const isApprover = canCreate;
+  const departments = ["CSE", "AI&DS", "ECE", "BCA"];
+  const [clubs, setClubs] = useState<Array<{ id: string; name: string }>>([]);
+
+  const load = () => setItems(store.getAll());
+
+  useEffect(() => {
+    load();
+    try {
+      const raw = localStorage.getItem("cc_clubs");
+      const list = raw ? JSON.parse(raw) as Array<any> : [];
+      setClubs(list.map((c:any)=>({ id: c.id, name: c.name })));
+    } catch {}
+  }, []);
+
+  const featured = useMemo(() => store.featured(items), [items]);
+  const upcoming = useMemo(() => store.upcoming(items), [items]);
+
+  const filtered = useMemo(() => {
+    let base = store.search(items, search, category, onlyUpcoming);
+    if (filterDept) base = base.filter(e => (e.department || "") === filterDept);
+    if (filterClub) base = base.filter(e => (e.club || "") === filterClub);
+    // Students should only see approved events
+    if (!isApprover) base = base.filter(e => e.approvalStatus === "approved");
+    return base;
+  }, [items, search, category, onlyUpcoming, filterDept, filterClub, isApprover]);
+  const paged = useMemo(() => store.paginate(filtered, page, PAGE_SIZE), [filtered, page]);
+
+  function resetForm() {
+    setEditingId(null);
+    setForm({ title: "", description: "", category: "", location: "", event_date: "", max_attendees: "", poster_data_url: "", department: "", club: "" });
+  }
+
+  function startEdit(e: store.EventItem) {
+    setEditingId(e.id);
+    setForm({
+      title: e.title,
+      description: e.description,
+      category: e.category,
+      location: e.location,
+      event_date: e.event_date.slice(0,16),
+      max_attendees: e.max_attendees ? String(e.max_attendees) : "",
+      poster_data_url: e.poster_data_url || "",
+      department: e.department || "",
+      club: e.club || "",
+    });
+    setOpen(true);
+  }
+
+  function onPosterChange(file: File | null) {
+    if (!file) return setForm(f => ({ ...f, poster_data_url: "" }));
+    const reader = new FileReader();
+    reader.onload = () => setForm(f => ({ ...f, poster_data_url: String(reader.result) }));
+    reader.readAsDataURL(file);
+  }
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.title || !form.event_date || !form.location || !form.category) {
+      toast({ title: "Missing fields", description: "Fill all required fields", variant: "destructive" });
+      return;
+    }
+
+    const payload = {
+      title: form.title,
+      description: form.description,
+      category: form.category,
+      location: form.location,
+      event_date: new Date(form.event_date).toISOString(),
+      status: "upcoming" as const,
+      max_attendees: form.max_attendees ? parseInt(form.max_attendees) : undefined,
+      organizer_id: userId,
+      organizer_name: user?.full_name || user?.email || "Organizer",
+      poster_data_url: form.poster_data_url || undefined,
+      department: form.department || null,
+      club: form.club || null,
+    };
+
+    if (editingId) {
+      store.update(editingId, payload);
+      toast({ title: "Updated", description: "Event updated" });
+    } else {
+      store.create(payload);
+      toast({ title: "Created", description: "Event created" });
+    }
+    setOpen(false);
+    resetForm();
+    load();
+  }
+
+  function remove(id: string) {
+    store.remove(id);
+    toast({ title: "Deleted", description: "Event deleted" });
+    load();
+  }
+
+  function registerIndividual(eventId: string) {
+    const r = store.registerIndividual(eventId, userId, (user as any)?.department || null);
+    if (r) toast({ title: "Registered", description: `Status: ${r.status}` });
+    load();
+  }
+
+  function registerTeam(eventId: string, teamName: string, members: number) {
+    const r = store.registerTeam(eventId, userId, teamName, members, (user as any)?.department || null);
+    if (r) toast({ title: "Registered (Team)", description: `Status: ${r.status}` });
+    load();
+  }
+
+  const organizerEvents = useMemo(() => store.getUserEvents(userId), [items, userId]);
+
+  return (
+    <div className="space-y-6">
+      {/* Hero Section with Featured & Upcoming */}
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg">Featured Events</CardTitle>
+              <Badge variant="secondary" className="text-xs">Top picks</Badge>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+              {featured.map(e => (
+                <div key={e.id} className="min-w-[200px] rounded-lg border bg-card hover:shadow-md transition-shadow">
+                  {e.poster_data_url ? (
+                    <img src={e.poster_data_url} className="w-full h-24 object-cover rounded-t-lg" />
+                  ) : (
+                    <div className="w-full h-24 bg-gradient-to-br from-primary/10 to-primary/5 rounded-t-lg flex items-center justify-center">
+                      <ImageIcon className="w-8 h-8 text-primary/40" />
+                    </div>
+                  )}
+                  <div className="p-3">
+                    <div className="font-medium text-sm line-clamp-1">{e.title}</div>
+                    <div className="text-xs text-muted-foreground mt-1">{new Date(e.event_date).toLocaleDateString()}</div>
+                  </div>
+                </div>
+              ))}
+              {featured.length === 0 && <div className="text-sm text-muted-foreground py-4">No featured events yet</div>}
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg">Upcoming Events</CardTitle>
+              <Badge variant="secondary" className="text-xs">{upcoming.length} events</Badge>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {upcoming.slice(0, 3).map(e => (
+                <div key={e.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors">
+                  <div className="flex-shrink-0 w-12 h-12 rounded bg-primary/10 flex items-center justify-center">
+                    <Calendar className="w-5 h-5 text-primary" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm line-clamp-1">{e.title}</div>
+                    <div className="text-xs text-muted-foreground">{new Date(e.event_date).toLocaleDateString()}</div>
+                  </div>
+                </div>
+              ))}
+              {upcoming.length === 0 && <div className="text-sm text-muted-foreground py-4">No upcoming events</div>}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Discover: Search + Filters */}
+      <Card className="border-none shadow-sm">
+        <CardHeader className="pb-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-lg">All Events</CardTitle>
+              <CardDescription className="text-sm mt-1">Browse and filter campus events</CardDescription>
+            </div>
+            {canCreate && (
+              <Dialog open={open} onOpenChange={(v)=>{ setOpen(v); if (!v) resetForm(); }}>
+                <DialogTrigger asChild>
+                  <Button className="gap-2" style={{ background: "var(--gradient-primary)" }}>
+                    <Plus className="w-4 h-4" />
+                    Create Event
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle>{editingId ? "Edit Event" : "Create New Event"}</DialogTitle>
+                    <DialogDescription>Fill in event details and preview before submitting</DialogDescription>
+                  </DialogHeader>
+                  <form onSubmit={submit} className="grid grid-cols-2 gap-4">
+            <Input placeholder="Search" value={search} onChange={(e)=>{ setSearch(e.target.value); setPage(1); }} />
+            <Select value={category ?? "all"} onValueChange={(v)=>{ setCategory(v === "all" ? null : v); setPage(1); }}>
+              <SelectTrigger>
+                <SelectValue placeholder="Category" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="academic">Academic</SelectItem>
+                <SelectItem value="cultural">Cultural</SelectItem>
+                <SelectItem value="sports">Sports</SelectItem>
+                <SelectItem value="tech">Technical</SelectItem>
+                <SelectItem value="social">Social</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={onlyUpcoming?"upcoming":"all"} onValueChange={(v)=>{ setOnlyUpcoming(v==="upcoming"); setPage(1); }}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="upcoming">Upcoming</SelectItem>
+                <SelectItem value="all">All</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={filterDept ?? "all"} onValueChange={(v)=>{ setFilterDept(v === "all" ? null : v); setPage(1); }}>
+              <SelectTrigger>
+                <SelectValue placeholder="Department" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Depts</SelectItem>
+                {departments.map(d=> <SelectItem key={d} value={d}>{d}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={filterClub ?? "all"} onValueChange={(v)=>{ setFilterClub(v === "all" ? null : v); setPage(1); }}>
+              <SelectTrigger>
+                <SelectValue placeholder="Club" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Clubs</SelectItem>
+                {clubs.map(c=> <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {canCreate && (
+              <Dialog open={open} onOpenChange={(v)=>{ setOpen(v); if (!v) resetForm(); }}>
+                <DialogTrigger asChild>
+                  <Button className="gap-2" style={{ background: "var(--gradient-primary)" }}>
+                    <Plus className="w-4 h-4" />
+                    {editingId ? "Edit Event" : "Create Event"}
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle>{editingId ? "Edit Event" : "Create New Event"}</DialogTitle>
+                    <DialogDescription>Fill in event details and preview before submitting</DialogDescription>
+                  </DialogHeader>
+                  <form onSubmit={submit} className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Title</Label>
+                      <Input value={form.title} onChange={(e)=>setForm(f=>({...f, title: e.target.value}))} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Category</Label>
+                      <Select value={form.category} onValueChange={(v)=>setForm(f=>({...f, category: v}))}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select category" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="academic">Academic</SelectItem>
+                          <SelectItem value="cultural">Cultural</SelectItem>
+                          <SelectItem value="sports">Sports</SelectItem>
+                          <SelectItem value="tech">Technical</SelectItem>
+                          <SelectItem value="social">Social</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Venue</Label>
+                      <Input value={form.location} onChange={(e)=>setForm(f=>({...f, location: e.target.value}))} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Date & Time</Label>
+                      <Input type="datetime-local" value={form.event_date} onChange={(e)=>setForm(f=>({...f, event_date: e.target.value}))} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Department</Label>
+                      <Select value={form.department} onValueChange={(v)=>setForm(f=>({...f, department: v}))}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select department" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {departments.map(d=> <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Club</Label>
+                      <Select value={form.club} onValueChange={(v)=>setForm(f=>({...f, club: v}))}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select club" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {clubs.map(c=> <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <Label>Max Attendees (optional)</Label>
+                      <Input type="number" value={form.max_attendees} onChange={(e)=>setForm(f=>({...f, max_attendees: e.target.value}))} placeholder="Leave empty for unlimited" />
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <Label>Description</Label>
+                      <Textarea value={form.description} onChange={(e)=>setForm(f=>({...f, description: e.target.value}))} rows={4} required />
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <Label>Poster (optional)</Label>
+                      <Input type="file" accept="image/*" onChange={(e)=>onPosterChange(e.target.files?.[0] || null)} />
+                    </div>
+                    <div className="md:col-span-2 grid md:grid-cols-2 gap-4">
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="text-sm">Live Preview</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-2">
+                          {form.poster_data_url ? (
+                            <img src={form.poster_data_url} className="w-full h-40 object-cover rounded" />
+                          ) : (
+                            <div className="w-full h-40 bg-muted rounded flex items-center justify-center text-muted-foreground">
+                              <ImageIcon className="w-6 h-6" />
+                            </div>
+                          )}
+                          <div className="font-medium">{form.title || "Event title"}</div>
+                          <div className="text-sm text-muted-foreground">{form.description || "Description..."}</div>
+                          <div className="text-xs text-muted-foreground">{form.location || "Venue"} • {form.event_date || "Date"}</div>
+                          {(form.department || form.club) && (
+                            <div className="text-xs text-muted-foreground">{form.department || ""}{form.department && form.club ? " • " : ""}{form.club || ""}</div>
+                          )}
+                        </CardContent>
+                      </Card>
+                      <div className="flex flex-col justify-end gap-2">
+                        <Button type="submit" style={{ background: "var(--gradient-primary)" }}>{editingId ? "Update" : "Create"}</Button>
+                        {editingId && (
+                          <Button type="button" variant="outline" onClick={()=>{ setOpen(false); resetForm(); }}>Cancel</Button>
+                        )}
+                      </div>
+                    </div>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            )}
+          </div>
+
+          {/* Results Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {paged.data.map(e => {
+              const status = store.registrationStatusForUser(e, userId);
+              return (
+                <Card key={e.id} className="hover:shadow-lg transition-all hover:scale-105 animate-fade-in" style={{ boxShadow: "var(--shadow-sm)" }}>
+                  <CardHeader>
+                    <div className="flex items-start justify-between">
+                      <CardTitle className="text-lg">{e.title}</CardTitle>
+                      <div className="flex gap-2 items-center">
+                        <Badge className="capitalize">{e.category}</Badge>
+                        {isApprover && (
+                          <Badge variant={e.approvalStatus === 'approved' ? 'default' : e.approvalStatus === 'pending' ? 'secondary' : 'destructive'} className="capitalize">{e.approvalStatus}</Badge>
+                        )}
+                      </div>
+                    </div>
+                    <CardDescription className="line-clamp-2">{e.description}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {e.poster_data_url && (
+                      <img src={e.poster_data_url} className="w-full h-36 object-cover rounded" />
+                    )}
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Calendar className="w-4 h-4" />
+                      {new Date(e.event_date).toLocaleString()}
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <MapPin className="w-4 h-4" />
+                      {e.location}
+                    </div>
+                    {(e.department || e.club) && (
+                      <div className="text-xs text-muted-foreground">{e.department || ""}{e.department && e.club ? " • " : ""}{e.club || ""}</div>
+                    )}
+                    {typeof e.max_attendees === 'number' && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Users className="w-4 h-4" />
+                        {e.attendees.length} / {e.max_attendees} registered
+                      </div>
+                    )}
+
+                    {/* Registration */}
+                    <div className="pt-2 border-t space-y-2">
+                      <p className="text-sm text-muted-foreground mb-1">Organized by {e.organizer_name || "Organizer"}</p>
+                      {status ? (
+                        <Badge variant="secondary" className="capitalize">Status: {status}</Badge>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                          <Button size="sm" onClick={()=>registerIndividual(e.id)} style={{ background: "var(--gradient-primary)" }}>Register</Button>
+                          <Input placeholder="Team name" id={`team-${e.id}`} />
+                          <Button size="sm" variant="outline" onClick={()=>{
+                            const team = (document.getElementById(`team-${e.id}`) as HTMLInputElement)?.value || "Team";
+                            registerTeam(e.id, team, 4);
+                          }}>Team Register</Button>
+                        </div>
+                      )}
+
+                      {/* Ticket QR for the current user's registration */}
+                      {status && (() => {
+                        const reg = e.attendees.find(a => a.user_id === userId);
+                        if (!reg) return null;
+                        const payload = store.registrationQrData(e.id, reg.id);
+                        return (
+                          <QrInline payload={payload} />
+                        );
+                      })()}
+                    </div>
+
+                    {/* Organizer controls */}
+                    {e.organizer_id === userId && (
+                      <div className="flex gap-2 pt-2 border-t">
+                        <Button size="sm" variant="outline" className="gap-2" onClick={()=>startEdit(e)}>
+                          <Edit className="w-4 h-4" /> Edit
+                        </Button>
+                        <Button size="sm" variant="destructive" className="gap-2" onClick={()=>remove(e.id)}>
+                          <Trash2 className="w-4 h-4" /> Delete
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* Approver actions */}
+                    {isApprover && e.approvalStatus === 'pending' && (
+                      <div className="flex gap-2 pt-2 border-t">
+                        <Button size="sm" onClick={()=>{ store.approveEvent(e.id); load(); }}>Approve</Button>
+                        <Button size="sm" variant="destructive" onClick={()=>{ store.rejectEvent(e.id); load(); }}>Reject</Button>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          {/* Pagination */}
+          <div className="flex items-center justify-between pt-2">
+            <div className="text-sm text-muted-foreground">Page {page} of {paged.pages}</div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={()=>setPage(Math.max(1, page-1))}><ChevronLeft className="w-4 h-4" /></Button>
+              <Button variant="outline" size="sm" onClick={()=>setPage(Math.min(paged.pages, page+1))}><ChevronRight className="w-4 h-4" /></Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Organizer Dashboard */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Organizer Dashboard</CardTitle>
+          <CardDescription>Your created events</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {organizerEvents.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No events created yet.</div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {organizerEvents.map(e => (
+                <Card key={e.id}>
+                  <CardHeader>
+                    <CardTitle className="text-base">{e.title}</CardTitle>
+                    <CardDescription>{new Date(e.event_date).toLocaleString()}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" onClick={()=>startEdit(e)}>Edit</Button>
+                      <Button size="sm" variant="destructive" onClick={()=>remove(e.id)}>Delete</Button>
+                    </div>
+                    {/* Attendance and stats for approvers */}
+                    {isApprover && (
+                      <div className="space-y-2 border-t pt-2">
+                        <div className="text-sm font-medium">Attendance</div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                          <Input placeholder="Paste QR payload" id={`qr-${e.id}`} />
+                          <Button variant="outline" onClick={()=>{ const val=(document.getElementById(`qr-${e.id}`) as HTMLInputElement)?.value; if(val){ store.markAttendanceFromQrPayload(val); load(); } }}>Mark Present</Button>
+                        </div>
+                        <div className="text-sm text-muted-foreground">Dept stats:</div>
+                        <div className="flex flex-wrap gap-2">
+                          {store.departmentStats(e.id).map(s => (
+                            <Badge key={s.department} variant="secondary">{s.department}: {s.present}/{s.count}</Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {/* Certificates */}
+                    {isApprover && (
+                      <div className="space-y-2 border-t pt-2">
+                        <div className="text-sm font-medium">Certificates</div>
+                        <div className="flex flex-wrap gap-2">
+                          {e.attendees.filter(a=>a.present && !a.certificateIssued).slice(0,10).map(a => (
+                            <Button key={a.id} variant="outline" size="sm" onClick={async ()=>{
+                              const doc = new jsPDF();
+                              doc.setFontSize(18);
+                              doc.text("Certificate of Participation", 20, 30);
+                              doc.setFontSize(12);
+                              doc.text(`This is to certify that attendee ${a.user_id} has participated in ${e.title}.`, 20, 45);
+                              doc.text(`Date: ${new Date(e.event_date).toLocaleString()}`, 20, 55);
+                              doc.save(`certificate-${e.title}-${a.user_id}.pdf`);
+                              store.markCertificateIssued(a.id);
+                              load();
+                            }}>Generate for {a.user_id.substring(0,6)}...</Button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function QrInline({ payload }: { payload: string }){
+  const [url, setUrl] = useState<string>("");
+  useEffect(()=>{ QRCode.toDataURL(payload).then(setUrl).catch(()=>setUrl("")); }, [payload]);
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      {url ? <img src={url} className="h-20 w-20" /> : <span className="text-muted-foreground">Generating QR...</span>}
+      <code className="break-all">{payload}</code>
+    </div>
+  );
+}
