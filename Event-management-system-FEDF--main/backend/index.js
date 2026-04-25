@@ -2,7 +2,7 @@
 require('dotenv').config();                       // load .env if present
 const express = require('express');
 const cors = require('cors');
-const mysql = require('mysql2/promise');
+// const mysql = require('mysql2/promise'); // commented out for demo
 const crypto = require('crypto');
 
 const app = express();
@@ -11,133 +11,137 @@ const port = process.env.PORT || 4000;
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 
-// database connection pool
-const dbConfig = {
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'eventdb',
-  waitForConnections: true,
-  connectionLimit: 10,
-};
+// Mock data for demo
+let users = [
+  {
+    id: crypto.randomUUID(),
+    email: 'admin@example.com',
+    password: 'admin',
+    full_name: 'Administrator',
+    department: 'IT',
+    student_id: null,
+    role: 'admin',
+  },
+  {
+    id: crypto.randomUUID(),
+    email: 'student@example.com',
+    password: 'student',
+    full_name: 'Sample Student',
+    department: 'Computer Science',
+    student_id: 'S12345',
+    role: 'student',
+  },
+];
 
-let pool;
+let sessions = [];
 
-async function initDb() {
-  // try to create the database if it doesn't already exist
-  const { host, user, password, database } = dbConfig;
-  const basePool = await mysql.createPool({ host, user, password });
-  await basePool.execute(`CREATE DATABASE IF NOT EXISTS \`${database}\``);
-  await basePool.end();
+let events = [
+  {
+    id: crypto.randomUUID(),
+    title: 'Orientation Ceremony',
+    description: 'Welcome event for new students.',
+    date: new Date().toISOString().slice(0, 19).replace('T', ' '),
+    attendees_count: 0,
+  },
+  {
+    id: crypto.randomUUID(),
+    title: 'Tech Talk: AI in 2026',
+    description: 'A guest lecture on the future of artificial intelligence.',
+    date: new Date(Date.now() + 86400000).toISOString().slice(0, 19).replace('T', ' '),
+    attendees_count: 0,
+  },
+];
 
-  pool = mysql.createPool(dbConfig);
+// database connection pool - commented out
+// const dbConfig = {
+//   host: process.env.DB_HOST || 'localhost',
+//   user: process.env.DB_USER || 'root',
+//   password: process.env.DB_PASSWORD || '',
+//   database: process.env.DB_NAME || 'eventdb',
+//   waitForConnections: true,
+//   connectionLimit: 10,
+// };
 
-  // create tables if they don't exist
-  await pool.execute(`
-    CREATE TABLE IF NOT EXISTS users (
-      id VARCHAR(36) PRIMARY KEY,
-      email VARCHAR(255) UNIQUE NOT NULL,
-      password VARCHAR(255) NOT NULL,
-      full_name VARCHAR(255),
-      department VARCHAR(255),
-      student_id VARCHAR(50),
-      role VARCHAR(50) DEFAULT 'student'
-    )
-  `);
+// let pool;
 
-  await pool.execute(`
-    CREATE TABLE IF NOT EXISTS sessions (
-      token VARCHAR(36) PRIMARY KEY,
-      email VARCHAR(255) NOT NULL,
-      FOREIGN KEY (email) REFERENCES users(email) ON DELETE CASCADE
-    )
-  `);
-
-  await pool.execute(`
-    CREATE TABLE IF NOT EXISTS events (
-      id VARCHAR(36) PRIMARY KEY,
-      title VARCHAR(255) NOT NULL,
-      description TEXT,
-      date DATETIME,
-      attendees_count INT DEFAULT 0
-    )
-  `);
-
-  // optionally seed the database with some sample data
-  await seedData();
-}
-
-// insert default users/events if tables are empty
-async function seedData() {
-  const usersCount = await query('SELECT COUNT(*) as cnt FROM users');
-  if (usersCount[0].cnt === 0) {
-    console.log('Seeding default users');
-    const defaultUsers = [
-      {
-        id: crypto.randomUUID(),
-        email: 'admin@example.com',
-        password: 'admin',
-        full_name: 'Administrator',
-        department: 'IT',
-        student_id: null,
-        role: 'admin',
-      },
-      {
-        id: crypto.randomUUID(),
-        email: 'student@example.com',
-        password: 'student',
-        full_name: 'Sample Student',
-        department: 'Computer Science',
-        student_id: 'S12345',
-        role: 'student',
-      },
-    ];
-    for (const u of defaultUsers) {
-      await query(
-        `INSERT INTO users (id, email, password, full_name, department, student_id, role)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [u.id, u.email, u.password, u.full_name, u.department, u.student_id, u.role]
-      );
-    }
-  }
-
-  const eventsCount = await query('SELECT COUNT(*) as cnt FROM events');
-  if (eventsCount[0].cnt === 0) {
-    console.log('Seeding default events');
-    const defaultEvents = [
-      {
-        id: crypto.randomUUID(),
-        title: 'Orientation Ceremony',
-        description: 'Welcome event for new students.',
-        date: new Date().toISOString().slice(0, 19).replace('T', ' '),
-        attendees_count: 0,
-      },
-      {
-        id: crypto.randomUUID(),
-        title: 'Tech Talk: AI in 2026',
-        description: 'A guest lecture on the future of artificial intelligence.',
-        date: new Date(Date.now() + 86400000).toISOString().slice(0, 19).replace('T', ' '),
-        attendees_count: 0,
-      },
-    ];
-    for (const e of defaultEvents) {
-      await query(
-        `INSERT INTO events (id, title, description, date, attendees_count)
-         VALUES (?, ?, ?, ?, ?)`,
-        [e.id, e.title, e.description, e.date, e.attendees_count]
-      );
-    }
-  }
-}
+// async function initDb() { ... } // commented out
 
 function generateToken() {
   return crypto.randomUUID();
 }
 
-// helper for queries
+// helper for queries - mock
 async function query(sql, params) {
-  const [rows] = await pool.execute(sql, params);
-  return rows;
+  // Mock implementation
+  if (sql.includes('SELECT * FROM users WHERE email = ?')) {
+    return users.filter(u => u.email === params[0]);
+  }
+  if (sql.includes('SELECT 1 FROM users WHERE email = ?')) {
+    return users.some(u => u.email === params[0]) ? [1] : [];
+  }
+  if (sql.includes('SELECT * FROM events')) {
+    return events;
+  }
+  if (sql.includes('SELECT * FROM events WHERE id = ?')) {
+    return events.filter(e => e.id === params[0]);
+  }
+  if (sql.includes('INSERT INTO sessions')) {
+    sessions.push({ token: params[0], email: params[1] });
+    return [];
+  }
+  if (sql.includes('DELETE FROM sessions')) {
+    sessions = sessions.filter(s => s.token !== params[0]);
+    return [];
+  }
+  if (sql.includes('INSERT INTO users')) {
+    const newUser = {
+      id: params[0],
+      email: params[1],
+      password: params[2],
+      full_name: params[3],
+      department: params[4],
+      student_id: params[5],
+      role: params[6],
+    };
+    users.push(newUser);
+    return [];
+  }
+  if (sql.includes('INSERT INTO events')) {
+    const newEvent = {
+      id: params[0],
+      title: params[1],
+      description: params[2],
+      date: params[3],
+      attendees_count: params[4],
+    };
+    events.push(newEvent);
+    return [];
+  }
+  if (sql.includes('UPDATE events SET attendees_count')) {
+    const event = events.find(e => e.id === params[0]);
+    if (event) event.attendees_count += 1;
+    return { affectedRows: 1 };
+  }
+  if (sql.includes('DELETE FROM events')) {
+    const index = events.findIndex(e => e.id === params[0]);
+    if (index > -1) {
+      events.splice(index, 1);
+      return { affectedRows: 1 };
+    }
+    return { affectedRows: 0 };
+  }
+  if (sql.includes('UPDATE events SET')) {
+    const event = events.find(e => e.id === params[params.length - 1]);
+    if (event) {
+      const keys = sql.match(/SET (.*) WHERE/)[1].split(', ').map(s => s.split(' = ')[0]);
+      keys.forEach((key, i) => {
+        event[key] = params[i];
+      });
+      return { affectedRows: 1 };
+    }
+    return { affectedRows: 0 };
+  }
+  return [];
 }
 
 // auth endpoints
@@ -269,13 +273,13 @@ app.post('/api/events/:id/register', async (req, res) => {
 });
 
 // start server after initializing database
-initDb()
-  .then(() => {
+// initDb()
+//   .then(() => {
     app.listen(port, () => {
       console.log(`Backend listening on http://localhost:${port}`);
     });
-  })
-  .catch(err => {
-    console.error('Failed to initialize database', err);
-    process.exit(1);
-  });
+//   })
+//   .catch(err => {
+//     console.error('Failed to initialize database', err);
+//     process.exit(1);
+//   });

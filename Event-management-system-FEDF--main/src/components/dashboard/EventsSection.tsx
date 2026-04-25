@@ -240,6 +240,7 @@ const EventsSection = ({ userId, userRole }: { userId: string; userRole?: string
             </Card>
           ))}
         </div>
+      </>
       )}
     </div>
   );

@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { User, Mail, Building2, IdCard, Shield, Edit2, Save, X } from "lucide-react";
 import { useUser } from "@/context/UserContext";
 import * as localAuth from "@/lib/localAuth";
+import { EventItem } from "@/lib/eventsStore";
 
 export default function ProfileSection() {
   const { toast } = useToast();
@@ -204,9 +205,9 @@ export default function ProfileSection() {
             <CardTitle className="text-2xl">
               {(() => {
                 try {
-                  const events = JSON.parse(localStorage.getItem("cc_events_v2") || "[]");
-                  return events.reduce((count: number, e: any) => 
-                    count + (e.attendees?.filter((a: any) => a.user_id === session?.id).length || 0), 0
+                  const events = JSON.parse(localStorage.getItem("cc_events_v2") || "[]") as EventItem[];
+                  return events.reduce((count: number, e) => 
+                    count + (e.attendees?.filter((a) => a.user_id === session?.id).length || 0), 0
                   );
                 } catch {
                   return 0;
@@ -222,8 +223,8 @@ export default function ProfileSection() {
             <CardTitle className="text-2xl">
               {(() => {
                 try {
-                  const events = JSON.parse(localStorage.getItem("cc_events_v2") || "[]");
-                  return events.filter((e: any) => e.organizer_id === session?.id).length;
+                  const events = JSON.parse(localStorage.getItem("cc_events_v2") || "[]") as EventItem[];
+                  return events.filter((e) => e.organizer_id === session?.id).length;
                 } catch {
                   return 0;
                 }

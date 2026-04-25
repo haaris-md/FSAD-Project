@@ -83,7 +83,7 @@ export function registerIndividual(eventId: string, userId: string, department?:
   const e = items[idx];
   const existing = e.attendees.find(a => a.user_id === userId);
   if (existing) return existing;
-  const reg = {
+  const reg: EventItem["attendees"][number] = {
     id: crypto.randomUUID(),
     user_id: userId,
     type: "individual" as const,
@@ -91,7 +91,7 @@ export function registerIndividual(eventId: string, userId: string, department?:
     registered_at: new Date().toISOString(),
     department: department || null,
   };
-  e.attendees.push(reg as any);
+  e.attendees.push(reg);
   save(items);
   return reg;
 }
@@ -101,7 +101,7 @@ export function registerTeam(eventId: string, userId: string, team_name: string,
   const idx = items.findIndex(e => e.id === eventId);
   if (idx < 0) return null;
   const e = items[idx];
-  const reg = {
+  const reg: EventItem["attendees"][number] = {
     id: crypto.randomUUID(),
     user_id: userId,
     type: "team" as const,
@@ -111,7 +111,7 @@ export function registerTeam(eventId: string, userId: string, team_name: string,
     registered_at: new Date().toISOString(),
     department: department || null,
   };
-  e.attendees.push(reg as any);
+  e.attendees.push(reg);
   save(items);
   return reg;
 }
@@ -188,7 +188,9 @@ export function markAttendanceFromQrPayload(payload: string) {
   try {
     const data = JSON.parse(payload);
     if (data && data.rid) markAttendanceByRegId(String(data.rid));
-  } catch {}
+  } catch (error) {
+    console.error("Invalid QR payload:", error);
+  }
 }
 
 // Department stats

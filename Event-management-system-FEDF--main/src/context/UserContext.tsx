@@ -7,6 +7,7 @@ export type UserContextType = {
   id: string;
   email: string;
   full_name?: string;
+  department?: string;
   student_id?: string;
   role: UserRole;
 } | null;

@@ -20,7 +20,7 @@ const Auth = () => {
   const [fullName, setFullName] = useState("");
   const [department, setDepartment] = useState("");
   const [studentId, setStudentId] = useState("");
-  const [role, setRole] = useState<string>("student");
+  const [role, setRole] = useState<"student" | "faculty" | "admin">("student");
   const [signInMode, setSignInMode] = useState<"email"|"student">("email");
 
   useEffect(() => {
@@ -86,7 +86,7 @@ const Auth = () => {
       full_name: fullName, 
       department, 
       student_id: studentId, 
-      role: role as any 
+      role,
     });
     setLoading(false);
     

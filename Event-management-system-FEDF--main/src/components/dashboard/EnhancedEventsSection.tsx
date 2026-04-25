@@ -59,9 +59,11 @@ export default function EnhancedEventsSection({ userId, userRole }: { userId: st
     load();
     try {
       const raw = localStorage.getItem("cc_clubs");
-      const list = raw ? JSON.parse(raw) as Array<any> : [];
-      setClubs(list.map((c:any)=>({ id: c.id, name: c.name })));
-    } catch {}
+      const list = raw ? (JSON.parse(raw) as Array<{ id: string; name: string }>) : [];
+      setClubs(list.map((c) => ({ id: c.id, name: c.name })));
+    } catch (error) {
+      console.error("Failed to load clubs:", error);
+    }
   }, []);
 
   const upcoming = useMemo(() => store.upcoming(items), [items]);
@@ -142,13 +144,13 @@ export default function EnhancedEventsSection({ userId, userRole }: { userId: st
   }
 
   function registerIndividual(eventId: string) {
-    const r = store.registerIndividual(eventId, userId, (user as any)?.department || null);
+    const r = store.registerIndividual(eventId, userId, user?.department || null);
     if (r) toast({ title: "Registered", description: `Status: ${r.status}` });
     load();
   }
 
   function registerTeam(eventId: string, teamName: string, members: number) {
-    const r = store.registerTeam(eventId, userId, teamName, members, (user as any)?.department || null);
+    const r = store.registerTeam(eventId, userId, teamName, members, user?.department || null);
     if (r) toast({ title: "Registered (Team)", description: `Status: ${r.status}` });
     load();
   }
