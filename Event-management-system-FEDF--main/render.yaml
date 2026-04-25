@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: event-management-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Add your database env vars here, e.g.:
+      # - key: DB_HOST
+      #   value: your-mysql-host
+      # - key: DB_USER
+      #   value: your-db-user
+      # - key: DB_PASSWORD
+      #   value: your-db-password
+      # - key: DB_NAME
+      #   value: your-db-name
+
+  - type: web
+    name: event-management-frontend
+    runtime: static
+    rootDir: .
+    buildCommand: npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: NODE_ENV
+        value: production

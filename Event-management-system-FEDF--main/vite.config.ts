@@ -6,12 +6,12 @@ import { componentTagger } from "lovable-tagger";
 export default defineConfig(({ mode }) => ({
   server: {
     host: "0.0.0.0",
-    port: 8080,
+    port: 3000,
     allowedHosts: true,   // ✅ FIX for Render
   },
   preview: {
     host: "0.0.0.0",
-    port: 8080,
+    port: 3000,
     allowedHosts: true,   // ✅ Also required for production preview
   },
 
